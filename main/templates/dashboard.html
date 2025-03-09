@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Spotify Dashboard</title>
+    <script>
+        async function authenticateAndFetchData() {
+            document.getElementById('loading').style.display = 'block';
+            window.location.href = '/login';  // Redirects to Flask route for Spotify auth
+        }
+    </script>
+</head>
+<body>
+    <h1>Welcome to Your Spotify Dashboard</h1>
+    <button onclick="authenticateAndFetchData()">Login with Spotify</button>
+
+    <div id="loading" style="display: none;">
+        <p>Loading your data... Please wait.</p>
+    </div>
+</body>
+</html>
