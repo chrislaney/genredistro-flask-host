@@ -1,5 +1,6 @@
 # user.py
-from utils import parse_saved_tracks, load_genre_cache, get_top_100
+from .utils import parse_saved_tracks, load_genre_cache, get_top_100
+
 
 class User:
     def __init__(self, user_id, top_tracks, subgenres, supergenres):
