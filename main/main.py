@@ -20,7 +20,7 @@ app.config['SECRET_KEY'] = os.urandom(64)
 #these are got when you create a spotify developer app on spotify.com
 client_id = '222e77fb40c5487186ac94b242ef4175'
 client_secret = '17b609e97e204cdfaa6de949bfcd6f21'
-redirect_uri = 'http://localhost:5000/callback'
+redirect_uri = 'https://genre-distro.onrender.com/callback'
 
 #need all the scopes listed to fetch data wanted
 scope = 'user-library-read, user-top-read, playlist-read-private' #to add more scopes you just seperate them within the string with a comma
