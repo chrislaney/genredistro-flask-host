@@ -2,7 +2,6 @@ import json
 from collections import Counter
 from io import BytesIO
 import base64
-
 import spotipy
 
 
@@ -12,19 +11,19 @@ def load_genre_cache(file_path='genre_cache.json'):
         with open(file_path, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        # If file doesn't exist, create an empty JSON file
         with open(file_path, 'w') as f:
             json.dump({}, f, indent=4)  # Create an empty JSON object
-        return {}  # Return an empty dictionary
+        return {}
 
 
-#saves genre_cache dict to file_path - THIS MIGHT BE SLOWER BC I AM REWRITING ALL GENRE CACHE
+# saves genre_cache dict to file_path - THIS MIGHT BE SLOWER BC I AM REWRITING ALL GENRE CACHE
 def save_genre_cache(genre_cache, file_path='genre_cache.json'):
     with open(file_path, 'w') as f:
         json.dump(genre_cache, f, indent=4)
 
+
+# Save unknown genres, merging counts if the file already exists
 def save_unknown_genres(unknown_genres, unknown_genres_file="unknown_genres.json"):
-    """ Saves unknown genres to a file, merging counts if the file already exists. """
     if not unknown_genres:
         return  # No unknown genres to save
 
@@ -43,6 +42,7 @@ def save_unknown_genres(unknown_genres, unknown_genres_file="unknown_genres.json
         json.dump(existing_unknowns, f, indent=4)
 
 
+# Fetch top 100 tracks from Spotify
 def get_top_100(sp):
     top_tracks = []
     limit = 50  # Spotify API max limit for top tracks per request
@@ -58,6 +58,39 @@ def get_top_100(sp):
             response = sp.current_user_top_tracks(limit=limit, offset=50, time_range=time_range)
             top_tracks.extend(response['items'])
 
+        return top_tracks
+    except spotipy.exceptions.SpotifyException as e:
+        print(f"Error fetching top tracks: {e}")
+        return []
+
+
+# gets users top tracks for time range. DEFAULT: num_tracks=100, time_range='medium_term'
+# long_term  last ~1 year, medium_term last ~6 months,short_term last ~4 weeks
+def fetch_top_tracks(sp, num_tracks=100, time_range='medium_term'):
+    top_tracks = []
+    limit = 50  # Spotify API max limit for top tracks per request
+    VALID_TIME_RANGES = ['short_term', 'medium_term', 'long_term']
+
+    # Validate
+    if time_range not in VALID_TIME_RANGES:
+        raise ValueError(f"Invalid time_range: {time_range}. Must be one of {VALID_TIME_RANGES}.")
+    if num_tracks <= 0:
+        raise ValueError("num_tracks must be a positive integer.")
+
+    offset = 0
+    try:
+        # Fetch first num_tracks%50 tracks to ensure spotify API max limit for top tracks per request is followed
+        if num_tracks % limit != 0:
+            response = sp.current_user_top_tracks(limit=num_tracks % limit, offset=offset, time_range=time_range)
+            offset += num_tracks % limit
+            top_tracks.extend(response['items'])
+
+        # Fetch next 50 tracks till num_tracks is met
+        for _ in range(num_tracks // limit):
+            response = sp.current_user_top_tracks(limit=limit, offset=offset, time_range=time_range)
+            offset += limit
+            top_tracks.extend(response['items'])
+
         # Return raw track data
         return top_tracks
 
@@ -66,6 +99,7 @@ def get_top_100(sp):
         return []
 
 
+# Parse saved tracks and compute genre distributions
 def parse_saved_tracks(sp, raw_tracks, genre_cache):
     parsed_tracks = []
     unknown_artist_ids = set()
@@ -96,41 +130,38 @@ def parse_saved_tracks(sp, raw_tracks, genre_cache):
         genres = genre_cache.get(track['artist_id'], [])
         track['genres'] = genres  # Assigning genres to track
 
-        # Updating genre counts
         for genre in genres:
             subgenre_count[genre] = subgenre_count.get(genre, 0) + 1
 
     save_genre_cache(genre_cache)
 
-    supergenre_count = get_genre_distros(subgenre_count)
+    supergenre_count = get_super_genre_counts(subgenre_count)
 
     supergenre_distro = normalize_genre_counts(supergenre_count)
     subgenre_distro = normalize_genre_counts(subgenre_count)
 
-    return parsed_tracks, subgenre_distro, supergenre_distro  # Returning genre counts alongside parsed tracks
+    return parsed_tracks, subgenre_distro, supergenre_distro
 
 
+# Normalize genre counts to frequency
 def normalize_genre_counts(genre_counts):
-    # Calculate the total count for the dictionary
     total_count = sum(genre_counts.values())
-
-    # Create a new dictionary with the normalized values (frequency)
     normalized_counts = {genre: count / total_count for genre, count in genre_counts.items()}
-
     return normalized_counts
 
-def find_super_genre(genre, genre_map_file="genre_map.json"):
-    """ Efficiently searches for a genre’s super genre in a large JSON file. """
-    with open(genre_map_file, "r") as f:
-        data = json.load(f)  # Load the structure once
 
+# Finds super genre for a genre using genre map
+def find_super_genre(genre, genre_map_file="genre_map.json"):
+    with open(genre_map_file, "r") as f:
+        data = json.load(f)
         for super_genre, sub_genres in data["genres_map"].items():
             if genre in sub_genres:
-                return super_genre  # Return as soon as we find a match
+                return super_genre  # return when match found
+    return None
 
-    return None  # Return None if not found
 
-def get_genre_distros(subgenre_count):
+# Get genre distributions (subgenre and supergenre)
+def get_super_genre_counts(subgenre_count):
     super_genre_counts = {}
     unknown_genres = {}
 
@@ -140,19 +171,20 @@ def get_genre_distros(subgenre_count):
         if super_genre:
             super_genre_counts[super_genre] = super_genre_counts.get(super_genre, 0) + count
         else:
-            unknown_genres[genre] = count  # Log it as unknown
+            unknown_genres[genre] = count
 
     save_unknown_genres(unknown_genres)
     return super_genre_counts
 
 
+# Fetch genres for unknown artists
 def fetch_unknown_artist_genres(sp, unknown_artist_genres):
-    genres = {} #dict to store artist_id and genre
+    genres = {}  # dict to store artist_id and genre
     try:
-        for i in range(0, len(unknown_artist_genres), 50): #iterates over unknown_genre_list in sequences of 50
-            response = sp.artists(unknown_artist_genres[i:i + 50]) #fetches in batches of 50
-            for artist in response['artists']: #this iterates over our artist information
-                genres[artist['id']] = artist.get('genres',[]) #this gets the genre from each and adds it to the dict
+        for i in range(0, len(unknown_artist_genres), 50):  # iterates over unknown_genre_list in sequences of 50
+            response = sp.artists(unknown_artist_genres[i:i + 50])  # fetches in batches of 50
+            for artist in response['artists']:  # this iterates over our artist information
+                genres[artist['id']] = artist.get('genres', [])  # this gets the genre from each and adds it to the dict
     except Exception as e:
         print(f"Error fetching genres: {e}")
     return genres

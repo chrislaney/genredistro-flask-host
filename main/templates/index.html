@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Genre Distro</title>
+    <script>
+        async function authenticateAndFetchData() {
+            document.getElementById('loading').style.display = 'block';
+            window.location.href = '/login';  // Redirects to Flask route for Spotify auth
+        }
+    </script>
+</head>
+<body>
+    <h1>Welcome to your genre distribution</h1>
+    <p> This is a genre distribution and comparison chart. The data is fetched via your spotify account,
+        When you log in you give us permission to fetch your top played songs and userID. We do not store any of this
+        information and it is immediately discarded upon closing the tab. This is purely meant for informational and inquistive purpose. For any questions please contact.
+        Chris Laney at Laneyct@mail.uc.edu. All data is provided by Spotify and no intermediary.
+    </p>
+    <button onclick="authenticateAndFetchData()">Login with Spotify</button>
+
+    <div id="loading" style="display: none;">
+        <p>Loading your data... Please wait.</p>
+    </div>
+</body>
+</html>

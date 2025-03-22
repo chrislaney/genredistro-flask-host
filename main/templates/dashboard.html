@@ -2,19 +2,124 @@
 <html>
 <head>
     <title>Spotify Dashboard</title>
-    <script>
-        async function authenticateAndFetchData() {
-            document.getElementById('loading').style.display = 'block';
-            window.location.href = '/login';  // Redirects to Flask route for Spotify auth
-        }
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <h1>Welcome to Your Spotify Dashboard</h1>
-    <button onclick="authenticateAndFetchData()">Login with Spotify</button>
+    <h1>Welcome, {{ user['userid'] }}</h1>
 
-    <div id="loading" style="display: none;">
-        <p>Loading your data... Please wait.</p>
-    </div>
+    <p>Your top subgenres:</p>
+    <ul>
+        {% for genre, count in user['subgenres'] %}
+            <li>{{ genre }} (%{{ count }})</li>
+        {% endfor %}
+    </ul>
+
+    <p>Your Supergenres:</p>
+    <ul>
+        {% for genre, count in user['supergenres'] %}
+            <li>{{ genre }} (%{{ count }})</li>
+        {% endfor %}
+    </ul>
+
+    <ul>
+        {% for track in user['recent_tracks'] %}
+            <li>{{ track['name'] }} by {{ track['artist'] }}</li>
+        {% endfor %}
+    </ul>
+
+<h1> Subgenre polar area chart</h1>
+
+    <div style="width: 700px; height: 700px;"> <canvas id="subgenreChart"></canvas> </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const ctx = document.getElementById('subgenreChart').getContext('2d');
+
+            // Extract data from Flask variable
+            const genreLabels = {{ user['subgenres'] | map(attribute=0) | list | tojson }};
+            const genreValues = {{ user['subgenres'] | map(attribute=1) | list | tojson }};
+
+            new Chart(ctx, {
+                type: 'polarArea',
+                data: {
+                    labels: genreLabels,
+                    datasets: [{
+                        label: 'Genre Distribution',
+                        data: genreValues,
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.5)',
+                            'rgba(54, 162, 235, 0.5)',
+                            'rgba(255, 206, 86, 0.5)',
+                            'rgba(75, 192, 192, 0.5)',
+                            'rgba(153, 102, 255, 0.5)',
+                            'rgba(255, 159, 64, 0.5)',
+                            'rgba(199, 199, 199, 0.5)',
+                            'rgba(83, 102, 255, 0.5)',
+                            'rgba(255, 99, 255, 0.5)',
+                            'rgba(0, 204, 102, 0.5)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+
+    <h1> Supergenre polar area chart</h1>
+         <div style="width: 700px; height: 700px;"> <canvas id="supergenreChart"></canvas> </div>
+
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const ctx = document.getElementById('supergenreChart').getContext('2d');
+
+            // Extract data from Flask variable
+            const genreLabels = {{ user['supergenres'] | map(attribute=0) | list | tojson }};
+            const genreValues = {{ user['supergenres'] | map(attribute=1) | list | tojson }};
+
+            new Chart(ctx, {
+                type: 'polarArea',
+                data: {
+                    labels: genreLabels,
+                    datasets: [{
+                        label: 'Genre Distribution',
+                        data: genreValues,
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.5)',
+                            'rgba(54, 162, 235, 0.5)',
+                            'rgba(255, 206, 86, 0.5)',
+                            'rgba(75, 192, 192, 0.5)',
+                            'rgba(153, 102, 255, 0.5)',
+                            'rgba(255, 159, 64, 0.5)',
+                            'rgba(199, 199, 199, 0.5)',
+                            'rgba(83, 102, 255, 0.5)',
+                            'rgba(255, 99, 255, 0.5)',
+                            'rgba(0, 204, 102, 0.5)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+
+
 </body>
 </html>

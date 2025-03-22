@@ -18,8 +18,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(64)
 
 #these are got when you create a spotify developer app on spotify.com
-client_id = '104ec8795164430c814e8b4e98a6d781'
-client_secret = 'e1dbca47ea984b6a8256631b4bbcfab8'
+client_id = '222e77fb40c5487186ac94b242ef4175'
+client_secret = '17b609e97e204cdfaa6de949bfcd6f21'
 redirect_uri = 'http://localhost:5000/callback'
 
 #need all the scopes listed to fetch data wanted
@@ -44,7 +44,7 @@ sp = Spotify(auth_manager=sp_oauth)
 #directs user to homepage, and makes them log in if needed
 @app.route('/')
 def home():
-    #cache_handler.get_cached_token checks to see if user has a prexisting cached token, if not directs them to auth
+    # cache_handler.get_cached_token checks to see if user has a prexisting cached token, if not directs them to auth
     # if not sp_oauth.validate_token(cache_handler.get_cached_token()):
     #     #this if not checks if user is not logged in, and directs them to auth_url
     #     auth_url = sp_oauth.get_authorize_url()
@@ -52,12 +52,22 @@ def home():
     # return redirect(url_for('get_data')) #if user is logged in, fires get_playlists
     return render_template('index.html')
 
+@app.route('/login')
+def login():
+    auth_url = sp_oauth.get_authorize_url()
+    return redirect(auth_url)
+
 #auth manager, refreshes token upon expiration. This is what provides a continuous experience and no need to manually fetch token
 @app.route('/callback')
 def callback():
+    # sp_oauth.get_access_token(request.args['code'])
+    # return redirect(url_for('get_data'))
     sp_oauth.get_access_token(request.args['code'])
-    return redirect(url_for('get_data'))
+    return redirect(url_for('loading'))  # Go to loading screen
 
+@app.route('/loading')
+def loading():
+    return render_template('loading.html')
 
 
 @app.route('/get_data')
@@ -70,9 +80,25 @@ def get_data():
     try:
         genre_cache = load_genre_cache()
         user = User.from_spotify(sp, genre_cache)  # Create user using class method
-        print(user)
 
-        return jsonify({"user": user.__dict__})
+        top_subgenres = sorted(user.subgenres.items(), key=lambda x: x[1], reverse=True)[:10]
+        top_supergenres = sorted(user.supergenres.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        user_data = {
+            "user_id": user.user_id,
+            "top_tracks": user.top_tracks,  # Already a list, no need to modify
+            #"subgenres": list(user.subgenres.items()),  # Convert dict to list of tuples
+            "subgenres": top_subgenres,  # Convert dict to list of tuples
+            "supergenres": top_supergenres  # Convert dict to list of tuples
+        }
+
+        print("top subgenres ferda!!")
+        print(top_subgenres)
+        # return jsonify(user_data)
+        # return jsonify({"user": user.__dict__})
+        # return render_template('dashboard.html', user=user.__dict__)
+        print("Static folder path:", os.path.abspath('static'))
+        return render_template('dashboard.html', user=user_data)
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -84,4 +110,5 @@ def logout():
 
 # this runs the flask app - it is created at the top of the file
 if __name__ == '__main__':
+    # app.run(debug=True)
     app.run(debug=True)
