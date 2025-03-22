@@ -18,8 +18,8 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.urandom(64)
 
 #these are got when you create a spotify developer app on spotify.com
-client_id = '222e77fb40c5487186ac94b242ef4175'
-client_secret = '17b609e97e204cdfaa6de949bfcd6f21'
+client_id = '104ec8795164430c814e8b4e98a6d781'
+client_secret = 'e1dbca47ea984b6a8256631b4bbcfab8'
 redirect_uri = 'https://genre-distro.onrender.com/callback'
 
 #need all the scopes listed to fetch data wanted
