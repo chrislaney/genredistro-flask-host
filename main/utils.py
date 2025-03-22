@@ -3,32 +3,43 @@ from collections import Counter
 from io import BytesIO
 import base64
 import spotipy
+import os
 
 
 # Load JSON file into a dictionary
-def load_genre_cache(file_path='genre_cache.json'):
+# Load genre cache from file_path
+def load_genre_cache(file_name='genre_cache.json'):
+    # Get the absolute file path relative to the current script directory
+    file_path = os.path.join(os.path.dirname(__file__), file_name)
+    
     try:
         with open(file_path, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
+        # If the file is not found, create an empty file
         with open(file_path, 'w') as f:
             json.dump({}, f, indent=4)  # Create an empty JSON object
         return {}
 
 
 # saves genre_cache dict to file_path - THIS MIGHT BE SLOWER BC I AM REWRITING ALL GENRE CACHE
-def save_genre_cache(genre_cache, file_path='genre_cache.json'):
+def save_genre_cache(genre_cache, file_name='genre_cache.json'):
+    # Get the absolute file path relative to the current script directory
+    file_path = os.path.join(os.path.dirname(__file__), file_name)
+    
     with open(file_path, 'w') as f:
         json.dump(genre_cache, f, indent=4)
-
 
 # Save unknown genres, merging counts if the file already exists
 def save_unknown_genres(unknown_genres, unknown_genres_file="unknown_genres.json"):
     if not unknown_genres:
         return  # No unknown genres to save
 
+    # Get the absolute file path relative to the current script directory
+    file_path = os.path.join(os.path.dirname(__file__), unknown_genres_file)
+    
     try:
-        with open(unknown_genres_file, "r") as f:
+        with open(file_path, "r") as f:
             existing_unknowns = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         existing_unknowns = {}
@@ -38,9 +49,8 @@ def save_unknown_genres(unknown_genres, unknown_genres_file="unknown_genres.json
         existing_unknowns[genre] = existing_unknowns.get(genre, 0) + count
 
     # Save updated unknown genres to file
-    with open(unknown_genres_file, "w") as f:
+    with open(file_path, "w") as f:
         json.dump(existing_unknowns, f, indent=4)
-
 
 # Fetch top 100 tracks from Spotify
 def get_top_100(sp):
