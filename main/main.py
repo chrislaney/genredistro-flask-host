@@ -111,4 +111,4 @@ def logout():
 # this runs the flask app - it is created at the top of the file
 if __name__ == '__main__':
     # app.run(debug=True)
-    app.run(debug=True)
+    app.run()
