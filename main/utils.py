@@ -161,12 +161,26 @@ def normalize_genre_counts(genre_counts):
 
 
 # Finds super genre for a genre using genre map
-def find_super_genre(genre, genre_map_file="genre_map.json"):
-    with open(genre_map_file, "r") as f:
-        data = json.load(f)
-        for super_genre, sub_genres in data["genres_map"].items():
-            if genre in sub_genres:
-                return super_genre  # return when match found
+# Function to get the correct file path for genre_map.json
+def get_genre_map_path(filename='genre_map.json'):
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+
+# Function to find the super genre for a given genre
+def find_super_genre(genre, genre_map_file=None):
+    if genre_map_file is None:
+        genre_map_file = get_genre_map_path()  # Default to 'genre_map.json' in the current directory
+    
+    try:
+        with open(genre_map_file, "r") as f:
+            data = json.load(f)
+            for super_genre, sub_genres in data["genres_map"].items():
+                if genre in sub_genres:
+                    return super_genre  # return when match found
+    except FileNotFoundError:
+        print(f"Error: {genre_map_file} not found")
+    except json.JSONDecodeError:
+        print(f"Error: Failed to decode JSON from {genre_map_file}")
+    
     return None
 
 
