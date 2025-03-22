@@ -1,5 +1,5 @@
 import os
-from utils import parse_saved_tracks, load_genre_cache, get_top_100
+from .utils import parse_saved_tracks, load_genre_cache, get_top_100
 from flask import Flask, session, url_for, request, jsonify, Response, render_template
 
 from spotipy import Spotify
