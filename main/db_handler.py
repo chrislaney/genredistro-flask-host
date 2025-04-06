@@ -301,7 +301,7 @@ class DynamoDBHandler:
     def get_all_users(self):
         """
         Retrieve all users from the SpotifyUsers table.
-    
+
         Returns:
             list: List of user data dictionaries.
         """
