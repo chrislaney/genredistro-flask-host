@@ -299,12 +299,12 @@ class DynamoDBHandler:
             return []
 
     def get_all_users(self):
-    """
-    Retrieve all users from the SpotifyUsers table.
-
-    Returns:
-        list: List of user data dictionaries.
-    """
+        """
+        Retrieve all users from the SpotifyUsers table.
+    
+        Returns:
+            list: List of user data dictionaries.
+        """
         try:
             response = self.users_table.scan()
             users = response.get('Items', [])
