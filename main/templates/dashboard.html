@@ -6,47 +6,423 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <h1>Welcome, {{ user['userid'] }}</h1>
+    <div class="playlist-header">
+        <h1>Welcome, {{ user['display_name'] }}</h1>
+    </div>
 
-    <p>Your top subgenres:</p>
-    <ul>
-        {% for genre, count in user['subgenres'] %}
-            <li>{{ genre }} (%{{ count }})</li>
-        {% endfor %}
-    </ul>
+    <div class="charts-container">
+        <h2>Supergenre Distribution</h2>
+        <div class="chart-wrapper">
+            <canvas id="supergenreChart"></canvas>
+        </div>
 
-    <p>Your Supergenres:</p>
-    <ul>
-        {% for genre, count in user['supergenres'] %}
-            <li>{{ genre }} (%{{ count }})</li>
-        {% endfor %}
-    </ul>
+        <h4>Your top super genres:</h4>
+        <ul class="genre-list" id="supergenre-list">
+            {% for genre, count in user['supergenres'].items() %}
+            {% if count > 0 %}
+            <li class="genre-item">{{ genre }} ({{ (count | float * 100) | round(2) }}%)</li>
+            {% endif %}
+            {% endfor %}
+        </ul>
 
-    <ul>
-        {% for track in user['recent_tracks'] %}
-            <li>{{ track['name'] }} by {{ track['artist'] }}</li>
-        {% endfor %}
-    </ul>
+        <h2>Subgenre Distribution</h2>
+        <div class="chart-wrapper">
+            <canvas id="subgenreChart"></canvas>
+        </div>
 
-<h1> Subgenre polar area chart</h1>
+        <h4>Your top subgenres:</h4>
+        <ul class="genre-list" id="subgenre-list">
+            {% set visible_count = 0 %}
+            {% for genre, count in user['subgenres'].items() %}
+            {% if count > 0 %}
+            {% if visible_count < 10 %}
+            <li class="genre-item">{{ genre }} ({{ (count | float * 100) | round(2) }}%)</li>
+            {% set visible_count = visible_count + 1 %}
+            {% else %}
+            <li class="genre-item hidden extra-item">{{ genre }} ({{ (count | float * 100) | round(2) }}%)</li>
+            {% endif %}
+            {% endif %}
+            {% endfor %}
+        </ul>
+        {% if visible_count >= 10 %}
+        <div class="show-more-btn" id="showMoreBtn" onclick="toggleGenres()">Show More</div>
+        {% endif %}
+    </div>
 
-    <div style="width: 700px; height: 700px;"> <canvas id="subgenreChart"></canvas> </div>
+    <!-- Comparison Section -->
+    <div class="comparison-section">
+        <h2>Compare with others</h2>
+        <p>Enter a Spotify playlist or user URL to compare genre distributions</p>
+
+        <div class="comparison-tabs">
+            <button id="tabPlaylist" class="tab-button tab-active" onclick="switchTab('playlist')">Playlist</button>
+            <button id="tabUser" class="tab-button" onclick="switchTab('user')">User</button>
+        </div>
+
+        <div id="playlistInput" class="comparison-input">
+            <input type="text" id="comparePlaylistUrl" placeholder="https://open.spotify.com/playlist/..." />
+            <button class="comparison-button" onclick="comparePlaylist()">Compare</button>
+        </div>
+
+        <div id="userInput" class="comparison-input" style="display: none;">
+            <input type="text" id="compareUserUrl" placeholder="https://open.spotify.com/user/..." />
+            <button class="comparison-button" onclick="compareUser()">Compare</button>
+        </div>
+
+        <div class="comparison-loading" id="comparisonLoading">
+            Loading comparison data... Please wait.
+        </div>
+
+        <div class="comparison-error" id="comparisonError"></div>
+
+        <div class="comparison-chart-wrapper" id="comparisonChartContainer">
+            <canvas id="radarComparisonChart"></canvas>
+        </div>
+    </div>
+
+    <div class="action-buttons">
+        <button class="back-button" onclick="window.location.href='/'">Back to Home</button>
+    </div>
 
     <script>
+        // Store the current user data
+        let currentUserData = {
+            name: "{{ user['display_name'] }}'s Listening",
+            supergenres: {}
+        };
+
+        {% for genre, count in user['supergenres'].items() %}
+            {% if count > 0 %}
+                currentUserData.supergenres["{{ genre }}"] = {{ (count | float * 100) }};
+            {% endif %}
+        {% endfor %}
+
+        function toggleGenres() {
+            const items = document.querySelectorAll('#subgenre-list .extra-item');
+            const button = document.getElementById('showMoreBtn');
+
+            if (button.innerText === "Show More") {
+                items.forEach(item => item.classList.remove('hidden'));
+                button.innerText = "Show Less";
+            } else {
+                items.forEach(item => item.classList.add('hidden'));
+                button.innerText = "Show More";
+            }
+        }
+
+        function switchTab(tab) {
+            // Update tab buttons
+            document.getElementById('tabPlaylist').classList.remove('tab-active');
+            document.getElementById('tabUser').classList.remove('tab-active');
+            document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('tab-active');
+
+            // Update input displays
+            document.getElementById('playlistInput').style.display = tab === 'playlist' ? 'flex' : 'none';
+            document.getElementById('userInput').style.display = tab === 'user' ? 'flex' : 'none';
+
+            // Reset error state
+            document.getElementById('comparisonError').style.display = 'none';
+            document.getElementById('comparisonError').textContent = '';
+        }
+
+        function isValidPlaylistUrl(url) {
+            // Regex pattern to validate playlist URL
+            const playlistPattern = /^https:\/\/open\.spotify\.com\/playlist\/[a-zA-Z0-9]+(\?.*)?$/;
+            return playlistPattern.test(url);
+        }
+
+        function isValidUserUrl(url) {
+            // Regex pattern to validate user URL
+            const userPattern = /^https:\/\/open\.spotify\.com\/user\/[a-zA-Z0-9_-]+(\?.*)?$/;
+            return userPattern.test(url);
+        }
+
+        function extractPlaylistId(url) {
+            try {
+                const parts = url.split('/');
+                const idPart = parts[parts.length - 1].split('?')[0];
+                return idPart;
+            } catch (error) {
+                console.error("Error extracting playlist ID:", error);
+                return null;
+            }
+        }
+
+        function extractUserId(url) {
+            try {
+                const parts = url.split('/');
+                const idPart = parts[parts.length - 1].split('?')[0];
+                return idPart;
+            } catch (error) {
+                console.error("Error extracting user ID:", error);
+                return null;
+            }
+        }
+
+        let radarChart = null;
+
+        async function comparePlaylist() {
+            const comparisonUrl = document.getElementById('comparePlaylistUrl').value;
+            const errorElement = document.getElementById('comparisonError');
+            const loadingElement = document.getElementById('comparisonLoading');
+            const chartContainer = document.getElementById('comparisonChartContainer');
+
+            // Reset state
+            errorElement.style.display = 'none';
+            errorElement.textContent = '';
+            chartContainer.style.display = 'none';
+
+            if (!isValidPlaylistUrl(comparisonUrl)) {
+                errorElement.textContent = "Please enter a valid Spotify playlist URL.";
+                errorElement.style.display = 'block';
+                return;
+            }
+
+            const playlistId = extractPlaylistId(comparisonUrl);
+            if (!playlistId) {
+                errorElement.textContent = "Error extracting playlist ID.";
+                errorElement.style.display = 'block';
+                return;
+            }
+
+            // Show loading indicator
+            loadingElement.style.display = 'block';
+
+            try {
+                // Fetch comparison playlist data
+                const response = await fetch(`/get_playlist/${playlistId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch playlist data');
+                }
+
+                const comparisonData = await response.json();
+
+                // Hide loading indicator
+                loadingElement.style.display = 'none';
+
+                // Format data for radar chart
+                const comparedPlaylistData = {
+                    name: comparisonData.playlist_metadata.name,
+                    supergenres: {}
+                };
+
+                // Convert supergenre distribution array to object
+                comparisonData.supergenre_distribution.forEach(item => {
+                    if (item[1] > 0) {
+                        comparedPlaylistData.supergenres[item[0]] = item[1];
+                    }
+                });
+
+                // Create radar chart
+                createComparisonChart(currentUserData, comparedPlaylistData);
+
+                // Show chart container
+                chartContainer.style.display = 'block';
+
+            } catch (error) {
+                loadingElement.style.display = 'none';
+                errorElement.textContent = "Error fetching comparison data: " + error.message;
+                errorElement.style.display = 'block';
+                console.error('Error:', error);
+            }
+        }
+
+        async function compareUser() {
+            const comparisonUrl = document.getElementById('compareUserUrl').value;
+            const errorElement = document.getElementById('comparisonError');
+            const loadingElement = document.getElementById('comparisonLoading');
+            const chartContainer = document.getElementById('comparisonChartContainer');
+
+            // Reset state
+            errorElement.style.display = 'none';
+            errorElement.textContent = '';
+            chartContainer.style.display = 'none';
+
+            if (!isValidUserUrl(comparisonUrl)) {
+                errorElement.textContent = "Please enter a valid Spotify user URL.";
+                errorElement.style.display = 'block';
+                return;
+            }
+
+            const userId = extractUserId(comparisonUrl);
+            if (!userId) {
+                errorElement.textContent = "Error extracting user ID.";
+                errorElement.style.display = 'block';
+                return;
+            }
+
+            // Show loading indicator
+            loadingElement.style.display = 'block';
+
+            try {
+                // Fetch comparison user data
+                const response = await fetch(`/get_user_data/${userId}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch user data');
+                }
+
+                const userData = await response.json();
+
+                // Hide loading indicator
+                loadingElement.style.display = 'none';
+
+                if (!userData || !userData.supergenres) {
+                    throw new Error('User not found or has no listening data');
+                }
+
+                // Format data for radar chart
+                const comparedUserData = {
+                    name: userData.display_name || `User ${userId}`,
+                    supergenres: {}
+                };
+
+                // Convert supergenre distribution to percentages if needed
+                for (const [genre, value] of Object.entries(userData.supergenres)) {
+                    if (value > 0) {
+                        // Check if value is already a percentage or needs conversion
+                        comparedUserData.supergenres[genre] = value <= 1 ? value * 100 : value;
+                    }
+                }
+
+                // Create radar chart
+                createComparisonChart(currentUserData, comparedUserData);
+
+                // Show chart container
+                chartContainer.style.display = 'block';
+
+            } catch (error) {
+                loadingElement.style.display = 'none';
+                errorElement.textContent = "Error fetching user data: " + error.message;
+                errorElement.style.display = 'block';
+                console.error('Error:', error);
+            }
+        }
+
+        function createComparisonChart(userData, comparisonData) {
+            // Get all unique genres from both sources (excluding those with 0%)
+            const allGenres = [...new Set([
+                ...Object.keys(userData.supergenres),
+                ...Object.keys(comparisonData.supergenres)
+            ])].filter(genre =>
+                (userData.supergenres[genre] || 0) > 0 ||
+                (comparisonData.supergenres[genre] || 0) > 0
+            );
+
+            // Get the maximum value to determine scale
+            const maxValue = Math.max(
+                ...allGenres.map(genre => Math.max(
+                    userData.supergenres[genre] || 0,
+                    comparisonData.supergenres[genre] || 0
+                ))
+            );
+
+            // Add 10% padding to the max value
+            const scalePadding = 1.1;
+            let suggestedMax = Math.ceil(maxValue * scalePadding);
+            if (suggestedMax > 100)
+                suggestedMax = 100;
+
+            // Prepare data for radar chart
+            const chartData = {
+                labels: allGenres,
+                datasets: [
+                    {
+                        label: userData.name,
+                        data: allGenres.map(genre => userData.supergenres[genre] || 0),
+                        backgroundColor: 'rgba(29, 185, 84, 0.2)',
+                        borderColor: 'rgba(29, 185, 84, 1)',
+                        pointBackgroundColor: 'rgba(29, 185, 84, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(29, 185, 84, 1)'
+                    },
+                    {
+                        label: comparisonData.name,
+                        data: allGenres.map(genre => comparisonData.supergenres[genre] || 0),
+                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                        borderColor: 'rgba(54, 162, 235, 1)',
+                        pointBackgroundColor: 'rgba(54, 162, 235, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(54, 162, 235, 1)'
+                    }
+                ]
+            };
+
+            // Create or update radar chart
+            const ctx = document.getElementById('radarComparisonChart').getContext('2d');
+
+            if (radarChart) {
+                radarChart.destroy();
+            }
+
+            radarChart = new Chart(ctx, {
+                type: 'radar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: {
+                                display: true
+                            },
+                            suggestedMin: 0,
+                            suggestedMax: suggestedMax,
+                            ticks: {
+                                stepSize: Math.ceil(suggestedMax / 5)
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Taste Comparison',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw.toFixed(2)}%`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         document.addEventListener("DOMContentLoaded", function () {
-            const ctx = document.getElementById('subgenreChart').getContext('2d');
+            // Extract data for subgenre chart
+            const subgenreLabels = [];
+            const subgenreValues = [];
 
-            // Extract data from Flask variable
-            const genreLabels = {{ user['subgenres'] | map(attribute=0) | list | tojson }};
-            const genreValues = {{ user['subgenres'] | map(attribute=1) | list | tojson }};
+            {% for genre, count in user['subgenres'].items() %}
+                {% if count > 0 %}
+                    subgenreLabels.push("{{ genre }}");
+                    subgenreValues.push({{ count | float }});
+                {% endif %}
+            {% endfor %}
 
-            new Chart(ctx, {
+            // Create subgenre chart
+            const subCtx = document.getElementById('subgenreChart').getContext('2d');
+            new Chart(subCtx, {
                 type: 'polarArea',
                 data: {
-                    labels: genreLabels,
+                    labels: subgenreLabels,
                     datasets: [{
                         label: 'Genre Distribution',
-                        data: genreValues,
+                        data: subgenreValues,
                         backgroundColor: [
                             'rgba(255, 99, 132, 0.5)',
                             'rgba(54, 162, 235, 0.5)',
@@ -66,33 +442,37 @@
                     responsive: true,
                     plugins: {
                         legend: {
-                            position: 'top'
+                            position: 'top',
+                            display: true
+                        },
+                        title: {
+                            display: true,
+                            text: 'Subgenre Distribution'
                         }
                     }
                 }
             });
-        });
-    </script>
 
-    <h1> Supergenre polar area chart</h1>
-         <div style="width: 700px; height: 700px;"> <canvas id="supergenreChart"></canvas> </div>
+            // Extract data for supergenre chart
+            const supergenreLabels = [];
+            const supergenreValues = [];
 
+            {% for genre, count in user['supergenres'].items() %}
+                {% if count > 0 %}
+                    supergenreLabels.push("{{ genre }}");
+                    supergenreValues.push({{ count | float }});
+                {% endif %}
+            {% endfor %}
 
-    <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            const ctx = document.getElementById('supergenreChart').getContext('2d');
-
-            // Extract data from Flask variable
-            const genreLabels = {{ user['supergenres'] | map(attribute=0) | list | tojson }};
-            const genreValues = {{ user['supergenres'] | map(attribute=1) | list | tojson }};
-
-            new Chart(ctx, {
+            // Create supergenre chart
+            const superCtx = document.getElementById('supergenreChart').getContext('2d');
+            new Chart(superCtx, {
                 type: 'polarArea',
                 data: {
-                    labels: genreLabels,
+                    labels: supergenreLabels,
                     datasets: [{
                         label: 'Genre Distribution',
-                        data: genreValues,
+                        data: supergenreValues,
                         backgroundColor: [
                             'rgba(255, 99, 132, 0.5)',
                             'rgba(54, 162, 235, 0.5)',
@@ -112,14 +492,17 @@
                     responsive: true,
                     plugins: {
                         legend: {
-                            position: 'top'
+                            position: 'top',
+                            display: true
+                        },
+                        title: {
+                            display: true,
+                            text: 'Supergenre Distribution'
                         }
                     }
                 }
             });
         });
     </script>
-
-
 </body>
 </html>
