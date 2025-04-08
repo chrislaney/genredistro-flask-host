@@ -81,7 +81,7 @@ clusterer = Clusterer(all_user_dicts)
 #    except Exception as e:
 #        print(f"Error saving labeled data: {e}")
 
-if False: 
+if True:
     print("\n" + "*_"*80)
     print(" YOU ARE UPDATING CLUSTER ASSIGNMENTS ")
     print("ENSURE THIS IS INTENTIONAL (you've changed the clustering model or inputs)")
@@ -420,4 +420,4 @@ def logout():
     return redirect(url_for('home'))
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
