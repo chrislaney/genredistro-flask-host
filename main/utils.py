@@ -2,6 +2,8 @@ import json
 from collections import Counter
 from io import BytesIO
 import base64
+
+import numpy as np
 import spotipy
 
 
@@ -200,5 +202,19 @@ def fetch_unknown_artist_genres(sp, unknown_artist_genres):
     except Exception as e:
         print(f"Error fetching genres: {e}")
     return genres
+# Generates training data from database for clusters; input is a list of dictionaries consisting of user data
+def gen_train_matrix(user_list):
+    matrix = []
+    labels = []
+    for user_dict in user_list:
+        matrix.append(get_ordered_user_row(user_dict))
+        labels.append(user_dict['user_id'])
+    return np.array(matrix), labels
 
+def get_ordered_user_row(user_dict):
+    ordered_row = []
+    # iterate through genres as listed to preserve order
+    for genre in SUPERGENRES:
+        ordered_row.append(user_dict['supergenres'].get(genre, 0))
+    return np.array(ordered_row)
 

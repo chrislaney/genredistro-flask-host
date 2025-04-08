@@ -1,4 +1,5 @@
 import os
+from clusterer import Clusterer
 from utils import load_genre_cache, parse_tracks, fetch_top_tracks
 from playlist_utils import parse_playlist, get_all_user_playlist_ids, generate_similarity_playlists, get_playlist_distro
 from clustering import assign_user_cluster
@@ -11,6 +12,7 @@ from user import User
 from db_handler import DynamoDBHandler
 from dotenv import load_dotenv
 from datetime import datetime
+
 
 print("Flask is running THIS file:", __file__)
 # Create the Flask app
@@ -31,6 +33,18 @@ db_handler = DynamoDBHandler(
     aws_access_key=AWS_ACCESS_KEY,
     aws_secret_key=AWS_SECRET_KEY
 )
+"""
+1. Iniitalize clusterer: check
+2. Get users in database: see about seamus and chris for data: check
+    2a: create matrix out of supergenre distro: check
+
+3. train clusterer, get labels back: check
+    3a: assign users to respective cluster class (in memory lsit?)
+    3b: asiign label to all users
+    3c: update users in database
+4. keep in mem to do cluster assignment
+"""
+
 
 # Create necessary tables if they don't exist
 try:
@@ -45,6 +59,8 @@ redirect_uri = os.environ.get('SPOTIFY_REDIRECT_URI', 'http://localhost:5000/cal
 #need all the scopes listed to fetch data wanted and create platylists 
 scope = 'user-library-read, user-top-read, playlist-read-private, playlist-modify-private, playlist-modify-public'
 
+
+
 # OAuth handler
 cache_handler = FlaskSessionCacheHandler(session)
 sp_oauth = SpotifyOAuth(
@@ -55,6 +71,43 @@ sp_oauth = SpotifyOAuth(
     cache_handler=cache_handler,
     show_dialog=True
 )
+all_user_dicts = db_handler.get_all_users()
+clusterer = Clusterer(all_user_dicts)
+#print(clusterer.labels) debug?
+#for dictionary, label in zip(all_user_dicts, clusterer.labels):
+#    dictionary['cluster_id'] = int(label)
+#    try:
+#        db_handler.save_user_data(dictionary)
+#    except Exception as e:
+#        print(f"Error saving labeled data: {e}")
+
+if False: 
+    print("\n" + "*_"*80)
+    print(" YOU ARE UPDATING CLUSTER ASSIGNMENTS ")
+    print("ENSURE THIS IS INTENTIONAL (you've changed the clustering model or inputs)")
+    print("\n" + "*_"*80)
+    #Update only changed cluster_ids
+    for user_dict in all_user_dicts:
+        user_id = user_dict['user_id']
+        current_cluster = user_dict.get('cluster_id', -1)# falls back to -1 if no cluster
+        predicted_cluster = clusterer.predict(user_dict) # fir to new cluster
+
+        if current_cluster != predicted_cluster:# ionly update if changed, saves call 
+            try:
+                db_handler.users_table.update_item(# updates only clusters
+                    Key={'user_id': user_id},
+                    UpdateExpression='SET cluster_id = :cid, last_updated = :now',
+                    ExpressionAttributeValues={
+                        ':cid': int(predicted_cluster),
+                        ':now': datetime.now().isoformat()
+                    }
+                )
+                print(f"updated {user_id}: {current_cluster} -> {predicted_cluster}")
+            except Exception as e:
+                print(f"error updating {user_id}: {e}")
+        #else:
+            #print(f"skipped {user_id}: already in cluster {current_cluster}") debug?
+
 
 # ensure valid token and refresh if needed
 def ensure_token():
@@ -100,7 +153,6 @@ def callback():
 def loading():
     return render_template('loading.html')
 
-
 # Get user data and genre distributions
 @app.route('/get_user')
 def get_user():
@@ -134,9 +186,21 @@ def get_user():
                 # Create user object from Spotify API
                 user = User.from_spotify(sp, genre_cache)
                 # Assign cluster 
-                user.cluster_id = int(assign_user_cluster(user.supergenres))
+                user.cluster_id = clusterer.predict(user.__dict__)
+                print(user.cluster_id) #debug?
+                print(user.__dict__) #debug?
+
+                #Sort subgenres and supergenres before passing to template
+                sorted_subgenres = dict(sorted(user.subgenres.items(), key=lambda item: item[1], reverse=True))
+                sorted_supergenres = dict(sorted(user.supergenres.items(), key=lambda item: item[1], reverse=True))
+
+                # Update user object with sorted genres
+                user.subgenres = sorted_subgenres
+                user.supergenres = sorted_supergenres
+                
                 # Save to DynamoDB
                 db_handler.save_user_data(user.__dict__)
+                
                 # Also save top tracks separately
                 db_handler.save_user_tracks(
                     user_id=user.user_id,
@@ -144,20 +208,8 @@ def get_user():
                     time_range='medium_term'  # Default time range
                 )
 
-
-                # Sort subgenres and supergenres before passing to template
-                sorted_subgenres = dict(sorted(user.subgenres.items(), key=lambda item: item[1], reverse=True))
-                sorted_supergenres = dict(sorted(user.supergenres.items(), key=lambda item: item[1], reverse=True))
-
-                # Update user object with sorted genres
-                user.subgenres = sorted_subgenres
-                user.supergenres = sorted_supergenres
-
-
                 return render_template('dashboard.html', user=user.__dict__)
             else:
-
-                # Sort subgenres and supergenres from the cached data
                 existing_user_data['subgenres'] = dict(sorted(existing_user_data['subgenres'].items(), key=lambda item: item[1], reverse=True))
                 existing_user_data['supergenres'] = dict(sorted(existing_user_data['supergenres'].items(), key=lambda item: item[1], reverse=True))
                 return render_template('dashboard.html', user=existing_user_data)
@@ -168,7 +220,6 @@ def get_user():
             return jsonify({'error': str(e)})
     else:
         return token_info  # Redirect response
-
 
 @app.route('/get_user_data/<user_id>')
 def get_user_data(user_id):
@@ -185,6 +236,7 @@ def get_user_data(user_id):
     except Exception as e:
         print(f"Error fetching user data: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 # Get playlist data
 @app.route('/get_playlist/<playlist_id>')
@@ -224,29 +276,6 @@ def show_playlist_data(playlist_id):
     except Exception as e:
         print(f"Error fetching playlist data: {e}")
         return jsonify({'error': str(e)})
-
-# Get user's analyzed playlists
-@app.route('/get_user_playlists')
-def get_user_playlists():
-    token_info = ensure_token_or_redirect()
-    if isinstance(token_info, dict):
-        try:
-            sp = Spotify(auth=token_info['access_token'])
-            user_id = sp.current_user()['id']
-            
-            # Get all analyzed playlists for this user from DynamoDB
-            playlists = db_handler.get_user_playlists(user_id)
-            
-            return jsonify({
-                "user_id": user_id,
-                "playlists": playlists
-            })
-            
-        except Exception as e:
-            print(f"Error fetching user playlists: {e}")
-            return jsonify({'error': str(e)})
-    else:
-        return token_info  # Redirect response
 
 # Get user's top tracks for a specific time range
 @app.route('/get_top_tracks/<time_range>')
@@ -303,21 +332,87 @@ def similarity_playlists():
     token_info = ensure_token_or_redirect()
     if isinstance(token_info, dict):
         sp = Spotify(auth=token_info['access_token'])
-        manual = request.args.get("manual") == "true"
         playlist_length = int(request.args.get("length", 100))
+        # Get the playlist parameter to determine which type(s) to generate
+        playlist_type = request.args.get("playlist", "")
 
-        if manual:
-            user_vector = {"Pop": 0.2, "Hip Hop": 0.3, "Electronic": 0.1}
-        else:
-            genre_cache = load_genre_cache()
-            user = User.from_spotify(sp, genre_cache)
-            user_vector = user.supergenres
-        playlists = generate_similarity_playlists(sp, user_vector, db_handler, total_songs=playlist_length)
+        genre_cache = load_genre_cache()
+        user = User.from_spotify(sp, genre_cache)
+
+        user_vector = user.supergenres
+        playlists = generate_similarity_playlists(
+            sp, 
+            user_vector, 
+            db_handler, 
+            clusterer, 
+            total_songs=playlist_length,
+            playlist=playlist_type
+        )
 
         return jsonify({
             group: pl['external_urls']['spotify'] if pl else None
             for group, pl in playlists.items()
         })
+    else:
+        return token_info  # Redirect response
+
+
+@app.route('/get_playlist_tracks/<playlist_id>')
+def get_playlist_tracks(playlist_id):
+    """Get tracks from a specific playlist for display"""
+    token_info = ensure_token_or_redirect()
+    if isinstance(token_info, dict):
+        try:
+            sp = Spotify(auth=token_info['access_token'])
+            
+            # Get all tracks from the playlist
+            tracks = []
+            results = sp.playlist_items(playlist_id)
+            
+            while results:
+                for item in results['items']:
+                    if item.get('track'):
+                        track = item['track']
+                        
+                        # Prepare track information
+                        artist_names = [artist['name'] for artist in track.get('artists', [])]
+                        
+                        track_info = {
+                            'id': track.get('id'),
+                            'name': track.get('name'),
+                            'artists': ', '.join(artist_names),
+                            'album': track.get('album', {}).get('name', 'Unknown Album'),
+                            'image': track.get('album', {}).get('images', [{}])[0].get('url') if track.get('album', {}).get('images') else None,
+                            'url': track.get('external_urls', {}).get('spotify')
+                        }
+                        
+                        tracks.append(track_info)
+                
+                # Get next batch of tracks if pagination exists
+                if results.get('next'):
+                    results = sp.next(results)
+                else:
+                    break
+            
+            # Get playlist details
+            playlist_details = sp.playlist(playlist_id)
+            
+            return jsonify({
+                'playlist': {
+                    'id': playlist_details.get('id'),
+                    'name': playlist_details.get('name'),
+                    'description': playlist_details.get('description'),
+                    'tracks_count': len(tracks),
+                    'url': playlist_details.get('external_urls', {}).get('spotify')
+                },
+                'tracks': tracks
+            })
+            
+        except Exception as e:
+            print(f"Error fetching playlist tracks: {e}")
+            return jsonify({'error': str(e)}), 500
+    else:
+        return token_info  # Redirect response
 
 @app.route('/logout')
 def logout():
@@ -325,4 +420,4 @@ def logout():
     return redirect(url_for('home'))
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)

@@ -10,6 +10,7 @@ class User:
         self.supergenres = supergenres
         self.created_at = datetime.now().isoformat()
         self.last_updated = datetime.now().isoformat()
+        self.cluster = -1
 
     def __repr__(self):
         return (f"User(user_id={self.user_id}, "
